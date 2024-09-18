@@ -1,0 +1,41 @@
+# Bitbucket Pipelines configuration file
+
+image: node:20-slim
+
+pipelines:
+  branches:
+    master: # For production branch (usually `master`)
+      - step:
+          name: Build and Deploy in Production
+          caches:
+            - node
+          script:
+            - echo "Building..."
+            - npm install --frozen-lockfile # Use --frozen-lockfile to avoid unnecessary installs
+            - npm run build
+
+            - apt-get update && apt-get install -y sshpass openssh-client zip unzip # Install SSH tools
+
+            # Set up variables for SSH login
+            - export USER="root" # SSH username
+            - export HOST="203.188.245.58" # Remote server address
+            - export PORT="8886" # SSH port
+            - export PASSWORD=$SSH_PASSWORD # Password stored in Bitbucket Secrets
+            - export REMOTE_DIR="/root/rnd-jerp/bitbucket" # Target directory on remote server
+
+            # Zip the build files
+            - echo "Zipping build files..."
+            - cd build && zip -r ../build.zip . && cd ..
+
+            # Transfer the zipped file via SCP
+            - echo "Transferring zipped files..."
+            - sshpass -p "$PASSWORD" scp -P "$PORT" -o StrictHostKeyChecking=no build.zip $USER@$HOST:$REMOTE_DIR
+
+            # Unzip the files on the remote server
+            - echo "Unzipping files on the server..."
+            - sshpass -p "$PASSWORD" ssh -p "$PORT" -o StrictHostKeyChecking=no $USER@$HOST "cd $REMOTE_DIR && unzip -o build.zip && rm build.zip"
+
+definitions:
+  caches:
+    node:
+      path: ~/.npm
